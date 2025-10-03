@@ -3,14 +3,16 @@ API Data Ingestion DAG
 Simulates fetching data from external API and loading to data lake
 """
 
+import json
+import random
 from datetime import datetime, timedelta
-from airflow import DAG
+
+import pandas as pd
 from airflow.operators.python import PythonOperator
 from airflow.providers.postgres.hooks.postgres import PostgresHook
-import pandas as pd
-import json
 from faker import Faker
-import random
+
+from airflow import DAG
 
 default_args = {
     'owner': 'data_engineer',
@@ -30,14 +32,15 @@ dag = DAG(
     tags=['ingestion', 'api', 'raw'],
 )
 
+
 def fetch_api_data(**context):
     """Simulate API data fetch"""
     fake = Faker()
-    
+
     # Simulate customer data from CRM API
     num_customers = random.randint(10, 50)
     customers = []
-    
+
     for _ in range(num_customers):
         customer = {
             'customer_id': f'CUST_{random.randint(1000, 9999)}',
@@ -47,39 +50,45 @@ def fetch_api_data(**context):
             'city': fake.city(),
             'state': fake.state(),
             'country': 'Brazil',
-            'registration_date': fake.date_between(start_date='-2y', end_date='today').isoformat()
+            'registration_date': fake.date_between(
+                start_date='-2y', end_date='today'
+            ).isoformat(),
         }
         customers.append(customer)
-    
+
     # Save to JSON (simulating API response)
     with open('/opt/airflow/data/raw/customers_api.json', 'w') as f:
         json.dump(customers, f, indent=2)
-    
-    print(f"Fetched {num_customers} customers from API")
+
+    print(f'Fetched {num_customers} customers from API')
     return num_customers
+
 
 def load_customers_to_db(**context):
     """Load customer data to database"""
-    
+
     # Read JSON data
     with open('/opt/airflow/data/raw/customers_api.json', 'r') as f:
         customers = json.load(f)
-    
+
     df = pd.DataFrame(customers)
-    
+
     # Connect to database
     hook = PostgresHook(postgres_conn_id='postgres_default')
     engine = hook.get_sqlalchemy_engine()
-    
+
     # Load to raw.customer_data
-    df.to_sql('customer_data', engine, schema='raw', if_exists='append', index=False)
-    
-    print(f"Loaded {len(df)} customers to raw.customer_data")
+    df.to_sql(
+        'customer_data', engine, schema='raw', if_exists='append', index=False
+    )
+
+    print(f'Loaded {len(df)} customers to raw.customer_data')
+
 
 def update_customer_dimensions(**context):
     """Update customer dimension table"""
     hook = PostgresHook(postgres_conn_id='postgres_default')
-    
+
     sql = """
         INSERT INTO processed.dim_customers (
             customer_id, customer_name, email, phone, 
@@ -105,9 +114,10 @@ def update_customer_dimensions(**context):
             country = EXCLUDED.country,
             updated_at = CURRENT_TIMESTAMP
     """
-    
+
     hook.run(sql)
-    print("Customer dimension updated")
+    print('Customer dimension updated')
+
 
 # Define tasks
 t1 = PythonOperator(

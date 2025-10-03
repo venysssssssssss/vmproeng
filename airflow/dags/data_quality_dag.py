@@ -3,9 +3,11 @@ Data Quality DAG - Runs Spark job for data quality checks
 """
 
 from datetime import datetime, timedelta
-from airflow import DAG
+
 # from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
 from airflow.operators.python import PythonOperator
+
+from airflow import DAG
 
 default_args = {
     'owner': 'data_engineer',
@@ -26,9 +28,11 @@ dag = DAG(
     tags=['spark', 'quality', 'monitoring'],
 )
 
+
 def quality_check_complete(**context):
     """Callback when quality check is complete"""
-    print("Data quality check completed successfully!")
+    print('Data quality check completed successfully!')
+
 
 # Spark submit task (disabled for now - requires spark provider)
 # spark_quality_check = SparkSubmitOperator(

@@ -2,13 +2,15 @@
 MinIO Integration - Upload data to object storage
 """
 
+import json
+import os
 from datetime import datetime, timedelta
-from airflow import DAG
+
 from airflow.operators.python import PythonOperator
 from minio import Minio
 from minio.error import S3Error
-import json
-import os
+
+from airflow import DAG
 
 default_args = {
     'owner': 'data_engineer',
@@ -28,38 +30,41 @@ dag = DAG(
     tags=['minio', 'datalake', 'storage'],
 )
 
+
 def create_minio_client():
     """Create MinIO client"""
     return Minio(
-        "minio:9000",
-        access_key="minioadmin",
-        secret_key="minioadmin",
-        secure=False
+        'minio:9000',
+        access_key='minioadmin',
+        secret_key='minioadmin',
+        secure=False,
     )
+
 
 def create_buckets(**context):
     """Create necessary buckets in MinIO"""
     client = create_minio_client()
-    
+
     buckets = ['raw-data', 'processed-data', 'analytics', 'backups']
-    
+
     for bucket in buckets:
         try:
             if not client.bucket_exists(bucket):
                 client.make_bucket(bucket)
-                print(f"Created bucket: {bucket}")
+                print(f'Created bucket: {bucket}')
             else:
-                print(f"Bucket already exists: {bucket}")
+                print(f'Bucket already exists: {bucket}')
         except S3Error as e:
-            print(f"Error creating bucket {bucket}: {e}")
+            print(f'Error creating bucket {bucket}: {e}')
+
 
 def upload_to_datalake(**context):
     """Upload data files to MinIO"""
     client = create_minio_client()
-    
+
     # Upload sample data
     data_file = '/opt/airflow/data/raw/sales_transactions.csv'
-    
+
     if os.path.exists(data_file):
         try:
             # Upload to raw-data bucket
@@ -68,23 +73,25 @@ def upload_to_datalake(**context):
                 f'sales/{datetime.now().strftime("%Y/%m/%d")}/transactions.csv',
                 data_file,
             )
-            print(f"Uploaded {data_file} to MinIO")
+            print(f'Uploaded {data_file} to MinIO')
         except S3Error as e:
-            print(f"Error uploading file: {e}")
+            print(f'Error uploading file: {e}')
     else:
-        print(f"File not found: {data_file}")
+        print(f'File not found: {data_file}')
+
 
 def list_objects(**context):
     """List objects in MinIO buckets"""
     client = create_minio_client()
-    
+
     buckets = client.list_buckets()
-    
+
     for bucket in buckets:
-        print(f"\nBucket: {bucket.name}")
+        print(f'\nBucket: {bucket.name}')
         objects = client.list_objects(bucket.name, recursive=True)
         for obj in objects:
-            print(f"  - {obj.object_name} ({obj.size} bytes)")
+            print(f'  - {obj.object_name} ({obj.size} bytes)')
+
 
 # Define tasks
 t1 = PythonOperator(
