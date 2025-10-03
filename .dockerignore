@@ -1,0 +1,52 @@
+# Docker ignore file
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# Airflow
+airflow/logs/*
+!airflow/logs/.gitkeep
+airflow.db
+airflow.cfg
+unittests.cfg
+
+# Data files
+data/raw/*
+data/staging/*
+data/processed/*
+!data/raw/.gitkeep
+!data/staging/.gitkeep
+!data/processed/.gitkeep
+
+# Spark
+spark/notebooks/.ipynb_checkpoints/
+metastore_db/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+.cache/

@@ -1,0 +1,225 @@
+services:
+  # PostgreSQL - Data Warehouse
+  postgres:
+    image: postgres:15-alpine
+    container_name: de_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: datawarehouse
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql/init:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    networks:
+      - de_network
+    mem_limit: 128m
+    cpus: 0.3
+    command: >
+      postgres 
+      -c shared_buffers=32MB 
+      -c max_connections=20
+      -c work_mem=2MB
+      -c effective_cache_size=64MB
+
+  # Redis - Message Broker (DESABILITADO - usando SQLite para economizar RAM)
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: de_redis
+  #   ports:
+  #     - "6379:6379"
+  #   networks:
+  #     - de_network
+  #   mem_limit: 64m
+  #   cpus: 0.2
+  #   command: redis-server --maxmemory 48mb --maxmemory-policy allkeys-lru
+
+  # MinIO - Object Storage (S3-compatible)
+  minio:
+    image: minio/minio:latest
+    container_name: de_minio
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    networks:
+      - de_network
+    command: server /data --console-address ":9001"
+    mem_limit: 96m
+    cpus: 0.2
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 90s
+      timeout: 10s
+      retries: 2
+
+  # Apache Airflow Webserver
+  airflow-webserver:
+    image: apache/airflow:2.8.0-python3.11
+    container_name: de_airflow_webserver
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:postgres@postgres:5432/airflow
+      AIRFLOW__CORE__FERNET_KEY: 'UKMzEm3yIuFYEq1y3-2FxPNWSVwRASpahmQ9kQfEr8E='
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+      AIRFLOW__WEBSERVER__EXPOSE_CONFIG: 'true'
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'false'
+      AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.basic_auth'
+      AIRFLOW__WEBSERVER__WORKERS: 1
+      AIRFLOW__WEBSERVER__WORKER_REFRESH_BATCH_SIZE: 1
+      AIRFLOW__WEBSERVER__WORKER_REFRESH_INTERVAL: 60
+      AIRFLOW__WEBSERVER__WEB_SERVER_MASTER_TIMEOUT: 300
+      AIRFLOW__WEBSERVER__WEB_SERVER_WORKER_TIMEOUT: 300
+      AIRFLOW__CORE__PARALLELISM: 4
+      AIRFLOW__CORE__MAX_ACTIVE_RUNS_PER_DAG: 1
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./spark/jobs:/opt/airflow/spark_jobs
+      - ./data:/opt/airflow/data
+    ports:
+      - "8080:8080"
+    networks:
+      - de_network
+    depends_on:
+      - postgres
+    mem_limit: 512m
+    cpus: 0.4
+    command: >
+      bash -c "pip install faker minio --quiet &&
+               airflow db init &&
+               airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com || true &&
+               airflow webserver --workers 1"
+
+  # Apache Airflow Scheduler
+  airflow-scheduler:
+    image: apache/airflow:2.8.0-python3.11
+    container_name: de_airflow_scheduler
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:postgres@postgres:5432/airflow
+      AIRFLOW__CORE__FERNET_KEY: 'UKMzEm3yIuFYEq1y3-2FxPNWSVwRASpahmQ9kQfEr8E='
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'false'
+      AIRFLOW__SCHEDULER__CATCHUP_BY_DEFAULT: 'false'
+      AIRFLOW__SCHEDULER__PARSING_PROCESSES: 1
+      AIRFLOW__SCHEDULER__MAX_THREADS: 1
+      AIRFLOW__CORE__PARALLELISM: 4
+      AIRFLOW__CORE__MAX_ACTIVE_RUNS_PER_DAG: 1
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./spark/jobs:/opt/airflow/spark_jobs
+      - ./data:/opt/airflow/data
+    networks:
+      - de_network
+    depends_on:
+      - postgres
+      - airflow-webserver
+    mem_limit: 300m
+    cpus: 0.5
+    command: >
+      bash -c "sleep 60 &&
+               pip install faker minio --quiet &&
+               airflow db upgrade &&
+               airflow scheduler"
+
+  # Apache Spark Master
+  spark-master:
+    image: apache/spark:3.4.1
+    container_name: de_spark_master
+    environment:
+      - SPARK_MODE=master
+      - SPARK_MASTER_HOST=spark-master
+      - SPARK_MASTER_PORT=7077
+      - SPARK_MASTER_WEBUI_PORT=8081
+      - SPARK_DAEMON_MEMORY=48m
+    command: bash -c "/opt/spark/sbin/start-master.sh -h spark-master && tail -f /dev/null"
+    volumes:
+      - ./spark/jobs:/opt/spark-jobs
+      - ./data:/opt/data
+    ports:
+      - "7077:7077"
+      - "8081:8081"
+    networks:
+      - de_network
+    mem_limit: 128m
+    cpus: 0.25
+
+  # Apache Spark Worker
+  spark-worker:
+    image: apache/spark:3.4.1
+    container_name: de_spark_worker
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_MEMORY=96m
+      - SPARK_WORKER_CORES=1
+      - SPARK_DAEMON_MEMORY=24m
+    command: bash -c "/opt/spark/sbin/start-worker.sh spark://spark-master:7077 && tail -f /dev/null"
+    volumes:
+      - ./spark/jobs:/opt/spark-jobs
+      - ./data:/opt/data
+    depends_on:
+      - spark-master
+    networks:
+      - de_network
+    mem_limit: 128m
+    cpus: 0.25
+
+  # Metabase - BI Tool (OPCIONAL - pode desabilitar para economizar RAM)
+  metabase:
+    image: metabase/metabase:latest
+    container_name: de_metabase
+    environment:
+      MB_DB_TYPE: h2
+      JAVA_OPTS: "-Xmx128m -Xms64m"
+    ports:
+      - "3000:3000"
+    networks:
+      - de_network
+    depends_on:
+      - postgres
+    mem_limit: 164m
+    cpus: 0.3
+    profiles:
+      - full  # Para iniciar apenas com: docker-compose --profile full up -d
+
+  # Data Dashboard - Interface de monitoramento
+  data-dashboard:
+    image: python:3.11-slim
+    container_name: de_data_dashboard
+    environment:
+      PYTHONUNBUFFERED: 1
+    volumes:
+      - ./monitoring:/app
+      - ./data:/app/data
+    ports:
+      - "8501:8501"
+    networks:
+      - de_network
+    depends_on:
+      - postgres
+      - airflow-webserver
+    mem_limit: 128m
+    cpus: 0.3
+    working_dir: /app
+    command: >
+      bash -c "pip install streamlit pandas psycopg2-binary requests plotly --quiet &&
+               streamlit run dashboard.py --server.port=8501 --server.address=0.0.0.0"
+
+networks:
+  de_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  minio_data:
+  airflow_db:

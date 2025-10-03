@@ -1,0 +1,100 @@
+# Git ignore file
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Airflow
+airflow/logs/*
+!airflow/logs/.gitkeep
+airflow.db
+airflow.cfg.bak
+unittests.cfg
+webserver_config.py
+
+# Data files (não versionar dados)
+data/raw/*
+data/staging/*
+data/processed/*
+!data/raw/.gitkeep
+!data/staging/.gitkeep
+!data/processed/.gitkeep
+
+# Spark
+spark/notebooks/.ipynb_checkpoints/
+metastore_db/
+derby.log
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Docker
+.docker/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+*.bak
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Backups
+backup/
+*.backup
+*.sql.gz
